@@ -40,14 +40,13 @@ func Join(dir string, dst io.Writer) error {
 			err error
 			hdr *tar.Header
 		)
-		metaFile, err := os.Open(path.Join(dir, metaPath(virtPath)))
+		metaRealPath := path.Join(dir, metaPath(virtPath))
+		metaFile, err := os.Open(metaRealPath)
 		if os.IsNotExist(err) {
-			// There is no meta file: write a default header
-			hdr, err = tar.FileInfoHeader(info, "")
-			if err != nil {
-				return err
-			}
-			hdr.Name = virtPath
+			// If we want to create a default header when no tar header is
+			// present, we should do it here.
+			// At the moment we consider it an error.
+			return fmt.Errorf("missing tar header for %s: %s: no such file or directory", virtPath, metaRealPath)
 		} else if err != nil {
 			return err
 		} else {
@@ -132,7 +131,6 @@ func Split(src io.Reader, dir string) error {
 	}
 	return nil
 }
-
 
 func writeHeaderTo(hdr *tar.Header, f *os.File) error {
 	w := tar.NewWriter(f)
