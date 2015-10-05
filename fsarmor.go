@@ -114,11 +114,17 @@ func Split(src io.Reader, dir string) error {
 			return err
 		}
 
-		// FIXME: git can carry symlinks as well
-		if hdr.Typeflag == tar.TypeReg {
+		// ensure tree exists
+		fPath := filepath.Join(dir, DataTree, hdr.Name)
+		baseDir := filepath.Dir(fPath)
+		if err := os.MkdirAll(baseDir, 0700); err != nil {
+			return err
+		}
+		switch hdr.Typeflag {
+		case tar.TypeReg:
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
 			// FIXME: protect against unsafe tar headers, ../../ etc.
-			dataFile, err := os.OpenFile(path.Join(dir, DataTree, hdr.Name), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0700)
+			dataFile, err := os.OpenFile(fPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0700)
 			if err != nil {
 				return err
 			}
@@ -127,6 +133,60 @@ func Split(src io.Reader, dir string) error {
 			if err != nil {
 				return err
 			}
+		case tar.TypeSymlink:
+			fmt.Printf("[SYMLINK] %s %d bytes\n", hdr.Name, hdr.Size)
+			link, err := os.Readlink(hdr.Name)
+			if err != nil {
+				return err
+			}
+
+			Log("     -> link %s\n", link)
+
+			// link target
+			linkPath := path.Join(".", link)
+
+			// check if odd symlinks (i.e. mkdir -> /bin/busybox inside of /bin)
+			linkBaseParent := path.Dir(path.Dir(path.Join(baseDir, link)))
+
+			Log("     -> file path %s\n", path.Dir(hdr.Name))
+			Log("     -> link parent %s\n", linkBaseParent)
+			Log("     -> base parent %s\n", path.Dir(fPath))
+
+			// if file is not in root and it's a symlink to a full path
+			if path.Dir(hdr.Name) != "." && linkBaseParent == path.Dir(fPath) {
+				linkPath = path.Join(".", path.Base(link))
+				Log("     -> updating link %s\n", linkPath)
+			}
+
+			linkTarget := path.Base(hdr.Name)
+			Log("     -> create link %s -> %s\n", linkPath, linkTarget)
+
+			// get current dir for breadcrumb
+			workDir, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			// chdir to get proper symlink
+			if err := os.Chdir(baseDir); err != nil {
+				return err
+			}
+
+			linkDir := filepath.Dir(linkPath)
+			if err := os.MkdirAll(linkDir, 0700); err != nil {
+				return err
+			}
+
+			if err := os.Symlink(linkPath, linkTarget); err != nil {
+				return err
+			}
+
+			// change back to work dir
+			if err := os.Chdir(workDir); err != nil {
+				return err
+			}
+		default:
+			Log("     -> unable to handle %s. unknown type %d\n", hdr.Name, hdr.Typeflag)
 		}
 	}
 	return nil
