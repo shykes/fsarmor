@@ -104,6 +104,19 @@ func Split(src io.Reader, dir string) error {
 		if err != nil {
 			return err
 		}
+
+		fPath := filepath.Join(dir, DataTree, hdr.Name)
+
+		// FIXME: this could probably be improved to not
+		// nuke it if it exists but rather check a hash or something
+		if s, _ := os.Stat(fPath); s != nil {
+			if hdr.Name != "." {
+				if err := os.RemoveAll(fPath); err != nil {
+					return err
+				}
+			}
+		}
+
 		Log("NEW TAR HEADER: %s\n", hdr.Name)
 		Log("     -> metaPath(%v) = %v\n", hdr.Name, metaPath(hdr.Name))
 		metaRealPath := path.Join(dir, metaPath(hdr.Name))
@@ -123,7 +136,6 @@ func Split(src io.Reader, dir string) error {
 		}
 
 		// ensure tree exists
-		fPath := filepath.Join(dir, DataTree, hdr.Name)
 		baseDir := filepath.Dir(fPath)
 
 		if err := os.MkdirAll(baseDir, 0700); err != nil {
