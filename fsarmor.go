@@ -46,7 +46,9 @@ func Join(dir string, dst io.Writer) error {
 			// If we want to create a default header when no tar header is
 			// present, we should do it here.
 			// At the moment we consider it an error.
-			return fmt.Errorf("missing tar header for %s: %s: no such file or directory", virtPath, metaRealPath)
+			//return fmt.Errorf("missing tar header for %s: %s: no such file or directory", virtPath, metaRealPath)
+			Log("     -> missing tar header for %s: %s: no such file or directory", virtPath, metaRealPath)
+			return nil
 		} else if err != nil {
 			return err
 		} else {
@@ -62,16 +64,22 @@ func Join(dir string, dst io.Writer) error {
 			return err
 		}
 		if !info.IsDir() {
-			f, err := os.Open(name)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(os.Stderr, "--> writing %d bytes for entry %s\n", hdr.Size, hdr.Name)
-			if _, err := io.CopyN(tw, f, hdr.Size); err != nil {
+			switch hdr.Typeflag {
+			case tar.TypeReg:
+				Log("    --> creating file = %v\n", name)
+				f, err := os.Open(name)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "--> writing %d bytes for entry %s\n", hdr.Size, hdr.Name)
+				if _, err := io.CopyN(tw, f, hdr.Size); err != nil {
+					f.Close()
+					return err
+				}
 				f.Close()
-				return err
+			case tar.TypeSymlink:
+				Log("    --> creating symlink = %v\n", name)
 			}
-			f.Close()
 		}
 		return nil
 	})
@@ -117,10 +125,17 @@ func Split(src io.Reader, dir string) error {
 		// ensure tree exists
 		fPath := filepath.Join(dir, DataTree, hdr.Name)
 		baseDir := filepath.Dir(fPath)
+
 		if err := os.MkdirAll(baseDir, 0700); err != nil {
 			return err
 		}
+
 		switch hdr.Typeflag {
+		case tar.TypeDir:
+			fmt.Printf("[DIR] %s %d bytes\n", hdr.Name, hdr.Size)
+			if err := os.MkdirAll(fPath, 0700); err != nil {
+				return err
+			}
 		case tar.TypeReg:
 			fmt.Printf("[DATA] %s %d bytes\n", hdr.Name, hdr.Size)
 			// FIXME: protect against unsafe tar headers, ../../ etc.
